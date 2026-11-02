@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0f1115">
+<title>Watch Companion</title>
+<style>
+  :root{--bg:#0f1115;--card:#1a1d24;--line:#2a2f3a;--text:#e8ebf0;--mute:#9aa3b2;--accent:#4cc2ff;--bad:#ff6b6b}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,sans-serif;padding-bottom:72px}
+  header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;justify-content:space-between;align-items:center;z-index:5}
+  #status{font-size:13px;color:var(--accent)}
+  main{padding:16px;max-width:640px;margin:auto}
+  .tab{display:none}.tab.on{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+  h2{margin:0 0 8px;font-size:17px} h3{margin:0 0 6px;font-size:14px;color:var(--mute);font-weight:600}
+  .big{font-size:28px;font-weight:700}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  button,.btn{background:var(--accent);color:#04202e;border:0;border-radius:10px;padding:10px 14px;font:600 15px system-ui;cursor:pointer}
+  button.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+  button.danger{background:transparent;color:var(--bad);border:1px solid var(--bad)}
+  button:disabled{opacity:.4}
+  input,select{width:100%;background:#0f1115;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;font:16px system-ui;margin:4px 0 10px}
+  label{font-size:13px;color:var(--mute)}
+  nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--line);z-index:6}
+  nav button{flex:1;background:none;color:var(--mute);border-radius:0;padding:14px 0;font-size:14px}
+  nav button.on{color:var(--accent)}
+  canvas{width:100%;background:#0f1115;border-radius:10px}
+  .chip{padding:6px 12px;border:1px solid var(--line);border-radius:99px;background:none;color:var(--text);font-size:14px}
+  .chip.on{background:var(--accent);color:#04202e}
+  .bar{height:8px;background:var(--line);border-radius:6px;overflow:hidden}.bar>i{display:block;height:100%;background:var(--accent);width:0}
+  .slot{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+  #log{font:12px ui-monospace,monospace;color:var(--mute);max-height:140px;overflow:auto;white-space:pre-wrap}
+  video{width:100%;border-radius:10px;background:#000}
+  .thumbs{display:flex;gap:8px;flex-wrap:wrap}.thumbs img{width:90px;height:90px;object-fit:cover;border-radius:8px}
+  small{color:var(--mute)}
+</style>
+</head>
+<body>
+<header><b>Watch Companion</b><span id="status">Disconnected</span></header>
+<main>
+
+<!-- ============================ HEALTH ============================ -->
+<section class="tab on" id="tab-health">
+  <div class="card">
+    <h3>TODAY</h3>
+    <div class="big"><span id="steps">0</span> <small>steps</small></div>
+    <div class="bar"><i id="stepbar"></i></div>
+    <small id="stepsub">Goal 8000 · 0.00 km · 0 kcal</small>
+  </div>
+  <div class="grid">
+    <div class="card"><h3>HEART RATE</h3><div class="big" id="hr">--</div></div>
+    <div class="card"><h3>SpO₂</h3><div class="big" id="spo2">--</div></div>
+  </div>
+  <div class="card"><h3>BLOOD PRESSURE</h3><div class="big" id="bp">--</div></div>
+  <div class="card"><h3>SLEEP (LAST NIGHT)</h3><div id="sleep">No data</div></div>
+  <div class="card"><h3>ECG</h3><canvas id="ecg" width="600" height="160"></canvas><small id="ecgnote">No ECG recorded yet</small></div>
+  <button id="btnSync" style="width:100%">Sync from watch</button>
+</section>
+
+<!-- ============================ SPORT ============================= -->
+<section class="tab" id="tab-sport">
+  <div class="row" id="sportChips" style="margin-bottom:10px"></div>
+  <div class="card"><div class="big" id="sportTotal">0.0 km</div><small id="sportSub">0 kcal</small></div>
+  <div id="sportList"></div>
+</section>
+
+<!-- ============================ DEVICE ============================ -->
+<section class="tab" id="tab-device">
+  <div class="card">
+    <h2>Connection</h2>
+    <div class="row">
+      <button id="btnScan">Scan for watch</button>
+      <button class="ghost" id="btnScanAll">Show all devices</button>
+      <button class="ghost" id="btnReconnect">Reconnect</button>
+      <button class="ghost" id="btnDisc">Disconnect</button>
+    </div>
+    <small id="battery"></small>
+    <div style="margin-top:8px"><label><input type="checkbox" id="wake" style="width:auto;margin:0 8px 0 0">Keep screen on (the link drops if this page goes to the background)</label></div>
+  </div>
+
+  <div class="card">
+    <h2>Controls</h2>
+    <div class="row"><button id="btnFind">Find my watch (vibrate)</button></div>
+    <div class="slot"><span>Raise to wake</span><input type="checkbox" id="rtw" style="width:auto;margin:0"></div>
+  </div>
+
+  <div class="card">
+    <h2>Remote camera</h2>
+    <div class="row"><button id="btnCam">Start camera</button><button class="ghost" id="btnShot">Take photo now</button></div>
+    <small>While the camera is open, the watch's camera button takes the photo.</small>
+    <div id="camwrap" hidden style="margin-top:10px"><video id="cam" autoplay playsinline muted></video></div>
+    <div class="thumbs" id="thumbs" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Frequent contacts (max 8)</h2>
+    <div id="contacts"></div>
+    <button id="btnContacts" style="width:100%;margin-top:10px">Sync contacts to watch</button>
+  </div>
+
+  <div class="card">
+    <h2>Watch face wallpaper</h2>
+    <input type="file" id="wpFile" accept="image/*">
+    <canvas id="wpPrev" width="240" height="280" style="width:120px;display:block;margin-bottom:8px"></canvas>
+    <button id="btnWp" disabled>Send to watch</button>
+    <div class="bar" style="margin-top:10px"><i id="prog"></i></div>
+    <small>Web Bluetooth is limited to small packets, so a wallpaper can take a few minutes.</small>
+  </div>
+
+  <div class="card">
+    <h2>Danger zone</h2>
+    <div class="row"><button class="danger" id="btnReset">Reset device</button><button class="danger" id="btnRemove">Remove device</button></div>
+  </div>
+
+  <div class="card">
+    <h2>Diagnostics</h2>
+    <div class="row" style="margin-bottom:8px"><button class="ghost" id="btnTest">Inject test packets</button><button class="ghost" id="btnClear">Clear stored data</button></div>
+    <div id="log"></div>
+  </div>
+</section>
+
+<!-- ============================ PROFILE =========================== -->
+<section class="tab" id="tab-profile">
+  <div class="card">
+    <label>Name</label><input id="pName">
+    <label>Gender</label>
+    <select id="pGender"><option value="0">Female</option><option value="1">Male</option><option value="2">Other</option></select>
+    <label>Age</label><input id="pAge" type="number" inputmode="numeric">
+    <label>Height (cm)</label><input id="pHeight" type="number" inputmode="numeric">
+    <label>Weight (kg)</label><input id="pWeight" type="number" inputmode="decimal" step="0.1">
+    <label>Daily step goal</label><input id="pGoal" type="number" inputmode="numeric">
+    <div class="big" id="bmi">BMI --</div>
+    <button id="btnProfile" style="width:100%;margin-top:10px">Save and send to watch</button>
+  </div>
+</section>
+
+</main>
+<nav id="nav">
+  <button data-t="health" class="on">Health</button>
+  <button data-t="sport">Sport</button>
+  <button data-t="device">Device</button>
+  <button data-t="profile">Profile</button>
+</nav>
+
+<!-- ================================================================
+     PROTOCOL  (pure functions, no DOM)
+     !! Clone watches differ. Capture the official app's traffic
+     !! (Android: Developer options -> Bluetooth HCI snoop log -> Wireshark,
+     !! filter "btatt") and edit ONLY G, C and the offsets in parse().
+     Frame: 16 bytes = [opcode][14 payload][sum(0..14) & 0xFF]
+     Numbers are little-endian, except ECG samples (signed 16-bit big-endian).
+     Timestamps: epoch seconds, u32 LE; 0 means "now".
+     ================================================================ -->
+<script id="proto">
+const G = {
+  SERVICE: '6e40fff0-b5a3-f393-e0a9-e50e24dcca9e',
+  WRITE:   '6e400002-b5a3-f393-e0a9-e50e24dcca9e',
+  NOTIFY:  '6e400003-b5a3-f393-e0a9-e50e24dcca9e',
+  NAMES: ['Watch Ultra', 'HiWatch', 'FitPro'],
+  W: 240, H: 280,       // watch screen size
+  PACKET: 20            // Web Bluetooth cannot raise the MTU, so stay at 20 bytes
+};
+const C = {
+  TIME:0x01, BATT:0x03, FIND:0x05, SYNC:0x08, RESET:0x0A, PROFILE:0x0B, RTW:0x0C,
+  HR:0x10, ACT:0x11, BP:0x12, SPO2:0x13, SLEEP:0x14, ECG:0x15, SPORT:0x16, CAM:0x20,
+  KIND_CONTACTS:0x30, KIND_WALLPAPER:0x40, X_HDR:0xF0, X_DATA:0xF1, X_END:0xF2
+};
+const STAGES = ['Awake', 'Light', 'Deep', 'REM'];
+const SPORTS = {0:'Other', 1:'Walking', 2:'Running', 3:'Cycling'};
+
+function checksum(f){ let s = 0; for (let i = 0; i < 15; i++) s += f[i]; return s & 0xFF; }
+
+function frame(cmd, payload = []){
+  if (payload.length > 14) throw new Error('payload too large for one frame');
+  const f = new Uint8Array(16);
+  f[0] = cmd; f.set(payload, 1); f[15] = checksum(f);
+  return f;
+}
+
+function crc16(d){               // CRC-16/CCITT-FALSE
+  let crc = 0xFFFF;
+  for (const b of d){
+    crc ^= b << 8;
+    for (let i = 0; i < 8; i++){ crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1); crc &= 0xFFFF; }
+  }
+  return crc;
+}
+
+const findWatch   = () => frame(C.FIND, [0x01]);
+const factoryReset= () => frame(C.RESET, [0x01]);
+const raiseToWake = on => frame(C.RTW, [on ? 1 : 0]);
+const requestSync = () => frame(C.SYNC, [0xFF]);
+
+function timeSync(d = new Date()){
+  return frame(C.TIME, [d.getFullYear() - 2000, d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()]);
+}
+
+function userProfile(p){
+  const b = new DataView(new ArrayBuffer(9));
+  b.setUint8(0, p.gender); b.setUint8(1, p.age); b.setUint8(2, p.height);
+  b.setUint16(3, Math.round(p.weight * 10), true);   // 0.1 kg units, u16 LE
+  b.setUint32(5, p.goal, true);                       // u32 LE
+  return frame(C.PROFILE, new Uint8Array(b.buffer));
+}
+
+const bmiOf = (kg, cm) => cm > 0 ? Math.round(kg / ((cm / 100) ** 2) * 10) / 10 : 0;
+
+// fixed-width field, cut on a character boundary (never mid UTF-8 character)
+function field(str, max, ascii){
+  const enc = new TextEncoder(), out = [];
+  for (const ch of str){
+    const b = ascii ? [ch.charCodeAt(0) & 0x7F] : Array.from(enc.encode(ch));
+    if (out.length + b.length > max) break;
+    out.push(...b);
+  }
+  const a = new Uint8Array(max); a.set(out); return a;
+}
+
+function contactsBlob(list){            // [count] then per contact: idx, name[16], number[20]
+  if (list.length > 8) throw new Error('max 8 contacts');
+  const out = new Uint8Array(1 + list.length * 37);
+  out[0] = list.length;
+  list.forEach((c, i) => {
+    const o = 1 + i * 37;
+    out[o] = i;
+    out.set(field(c.name, 16, false), o + 1);
+    out.set(field(String(c.number).replace(/[^0-9+]/g, ''), 20, true), o + 17);
+  });
+  return out;
+}
+
+function rgb565(rgba, w, h){            // RGBA bytes -> RGB565 little-endian
+  const out = new Uint8Array(w * h * 2);
+  for (let i = 0; i < w * h; i++){
+    const r = rgba[i*4], g = rgba[i*4+1], b = rgba[i*4+2];
+    const v = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+    out[i*2] = v & 0xFF; out[i*2+1] = v >> 8;
+  }
+  return out;
+}
+
+function chunked(kind, data, packet = G.PACKET){
+  const body = Math.max(1, packet - 3), out = [];
+  const h = new DataView(new ArrayBuffer(7));
+  h.setUint8(0, kind); h.setUint32(1, data.length, true); h.setUint16(5, crc16(data), true);
+  out.push(frame(C.X_HDR, new Uint8Array(h.buffer)));
+  for (let off = 0, seq = 0; off < data.length; off += body, seq++){
+    const n = Math.min(body, data.length - off), p = new Uint8Array(3 + n);
+    p[0] = C.X_DATA; p[1] = seq & 0xFF; p[2] = seq >> 8; p.set(data.subarray(off, off + n), 3);
+    out.push(p);
+  }
+  out.push(frame(C.X_END, [kind]));
+  return out;
+}
+
+// Decode one notification. Returns null for unknown/corrupt frames.
+function parse(raw, now = Date.now()){
+  if (raw.length !== 16 || checksum(raw) !== raw[15]) return null;
+  const dv = new DataView(raw.buffer, raw.byteOffset, 16);
+  const ts = i => { const t = dv.getUint32(i, true); return t ? t * 1000 : now; };
+  switch (raw[0]){
+    case C.HR:    return {type:'hr',   ts:ts(1), bpm:raw[5]};
+    case C.ACT:   return {type:'act',  ts:ts(1), steps:dv.getUint32(5,true), dist:dv.getUint32(9,true), kcal:dv.getUint16(13,true)};
+    case C.BP:    return {type:'bp',   ts:ts(1), sys:raw[5], dia:raw[6]};
+    case C.SPO2:  return {type:'spo2', ts:ts(1), pct:raw[5]};
+    case C.SLEEP: return {type:'sleep',ts:ts(1), stage:raw[5], min:dv.getUint16(6,true)};
+    case C.ECG:   return {type:'ecg',  ts:now, seq:raw[1], samples:Array.from({length:6}, (_, i) => dv.getInt16(2 + i*2, false))};
+    case C.SPORT: return {type:'sport',ts:ts(1), sport:raw[5], min:dv.getUint16(6,true), dist:dv.getUint32(8,true), kcal:dv.getUint16(12,true)};
+    case C.BATT:  return {type:'batt', pct:Math.min(100, raw[1])};
+    case C.CAM:   return {type:'cam',  action:({1:'open',2:'shutter',3:'close'})[raw[1]] || null};
+    default: return null;
+  }
+}
+if (typeof module !== 'undefined') module.exports = {G,C,frame,checksum,crc16,userProfile,contactsBlob,chunked,rgb565,parse,field,timeSync,bmiOf};
+</script>
+
+<!-- ================================================================
+     APP
+     ================================================================ -->
+<script>
+const $ = id => document.getElementById(id);
+const KEY = 'watch-data-v1';
+const DEFAULTS = () => ({hr:[],bp:[],spo2:[],sleep:[],ecg:[],act:{},sports:[],battery:null,
+  profile:{name:'',age:30,gender:1,height:170,weight:70,goal:8000},contacts:[],rtw:false});
+let S;
+try { S = Object.assign(DEFAULTS(), JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { S = DEFAULTS(); }
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} };
+
+const log = m => { const l = $('log'); l.textContent = new Date().toLocaleTimeString() + '  ' + m + '\n' + l.textContent.slice(0, 3000); };
+const setStatus = t => $('status').textContent = t;
+const dayOf = ts => new Date(ts).toLocaleDateString('en-CA');   // yyyy-mm-dd, local
+const cap = (arr, n) => { if (arr.length > n) arr.splice(0, arr.length - n); };
+
+// ------------------------------------------------------------- tabs
+$('nav').addEventListener('click', e => {
+  const t = e.target.dataset.t; if (!t) return;
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x.id === 'tab-' + t));
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === e.target));
+});
+
+// -------------------------------------------------------- bluetooth
+let dev = null, wch = null, queue = Promise.resolve(), userDisc = false, backoff = 1000, rtimer = null;
+
+async function scan(all){
+  if (!navigator.bluetooth){ alert('Web Bluetooth is not available. Use Chrome on Android (or desktop Chrome/Edge).'); return; }
+  const opts = all ? {acceptAllDevices:true, optionalServices:[G.SERVICE]}
+                   : {filters:G.NAMES.map(n => ({namePrefix:n})), optionalServices:[G.SERVICE]};
+  try { dev = await navigator.bluetooth.requestDevice(opts); } catch (e){ log(e.message); return; }
+  dev.addEventListener('gattserverdisconnected', onDisc);
+  userDisc = false; await connect();
+}
+
+async function connect(){
+  if (!dev) return;
+  clearTimeout(rtimer);
+  setStatus('Connecting…');
+  try {
+    const server = await dev.gatt.connect();
+    const svc = await server.getPrimaryService(G.SERVICE);
+    wch = await svc.getCharacteristic(G.WRITE);
+    const nch = await svc.getCharacteristic(G.NOTIFY);
+    nch.addEventListener('characteristicvaluechanged', e => {
+      const v = e.target.value; onNotify(new Uint8Array(v.buffer, v.byteOffset, v.byteLength));
+    });
+    await nch.startNotifications();
+    backoff = 1000; setStatus('Connected · ' + (dev.name || 'watch')); log('Connected');
+    onReady();
+  } catch (e){
+    log('Connect failed: ' + e.message);
+    if (e.name === 'NotFoundError'){ setStatus('UUID mismatch'); log('Service/characteristic not found. Edit G.SERVICE / G.WRITE / G.NOTIFY at the top of the protocol script.'); return; }
+    scheduleReconnect();
+  }
+}
+
+function onDisc(){ wch = null; log('Disconnected'); if (!userDisc) scheduleReconnect(); else setStatus('Disconnected'); }
+
+function scheduleReconnect(){            // exponential back-off 1s … 60s while this page is open
+  if (userDisc || !dev) return;
+  clearTimeout(rtimer);
+  setStatus('Reconnecting in ' + Math.round(backoff / 1000) + 's…');
+  rtimer = setTimeout(connect, backoff);
+  backoff = Math.min(backoff * 2, 60000);
+}
+
+function disconnect(){ userDisc = true; clearTimeout(rtimer); try { dev && dev.gatt.disconnect(); } catch {} setStatus('Disconnected'); }
+
+// one GATT write at a time
+function send(bytes){
+  queue = queue.then(async () => {
+    if (!wch) return;
+    try { wch.writeValueWithResponse ? await wch.writeValueWithResponse(bytes) : await wch.writeValue(bytes); }
+    catch (e){ log('Write failed: ' + e.message); }
+  });
+  return queue;
+}
+
+async function sendAll(packets){
+  for (let i = 0; i < packets.length; i++){
+    await send(packets[i]);
+    $('prog').style.width = ((i + 1) / packets.length * 100) + '%';
+  }
+  setTimeout(() => $('prog').style.width = '0', 1500);
+}
+
+function onReady(){
+  send(timeSync()); send(userProfile(S.profile)); send(requestSync());
+}
+
+// ---------------------------------------------------- incoming data
+function onNotify(raw){
+  const e = parse(raw);
+  if (!e){ log('Unparsed: ' + Array.from(raw).map(b => b.toString(16).padStart(2, '0')).join(' ')); return; }
+  handle(e);
+}
+
+function handle(e){
+  switch (e.type){
+    case 'hr':    S.hr.push({ts:e.ts, bpm:e.bpm}); cap(S.hr, 500); break;
+    case 'bp':    S.bp.push({ts:e.ts, sys:e.sys, dia:e.dia}); cap(S.bp, 200); break;
+    case 'spo2':  S.spo2.push({ts:e.ts, pct:e.pct}); cap(S.spo2, 200); break;
+    case 'act':   S.act[dayOf(e.ts)] = {steps:e.steps, dist:e.dist, kcal:e.kcal}; break;
+    case 'sleep': if (!S.sleep.some(x => x.ts === e.ts)) S.sleep.push({ts:e.ts, stage:e.stage, min:e.min}); cap(S.sleep, 400); break;
+    case 'ecg':   S.ecg.push(...e.samples); cap(S.ecg, 900); break;
+    case 'sport': if (!S.sports.some(x => x.ts === e.ts)) S.sports.push({ts:e.ts, sport:e.sport, min:e.min, dist:e.dist, kcal:e.kcal}); break;
+    case 'batt':  S.battery = e.pct; break;
+    case 'cam':   onCamera(e.action); return;
+  }
+  save(); render();
+}
+
+// ------------------------------------------------------ rendering
+let sportFilter = null;
+
+function render(){
+  const g = S.profile.goal || 8000, a = S.act[dayOf(Date.now())] || {steps:0, dist:0, kcal:0};
+  $('steps').textContent = a.steps;
+  $('stepbar').style.width = Math.min(100, a.steps / g * 100) + '%';
+  $('stepsub').textContent = `Goal ${g} · ${(a.dist / 1000).toFixed(2)} km · ${a.kcal} kcal`;
+
+  const hr = S.hr.at(-1), bp = S.bp.at(-1), sp = S.spo2.at(-1);
+  $('hr').textContent = hr ? hr.bpm + ' BPM' : '--';
+  $('bp').textContent = bp ? `${bp.sys}/${bp.dia} mmHg` : '--';
+  $('spo2').textContent = sp ? sp.pct + ' %' : '--';
+
+  const since = Date.now() - 36 * 3600e3, tot = [0, 0, 0, 0];
+  S.sleep.filter(x => x.ts >= since).forEach(x => tot[x.stage] += x.min);
+  const hm = m => `${Math.floor(m / 60)}h ${m % 60}m`, asleep = tot[1] + tot[2] + tot[3];
+  $('sleep').innerHTML = asleep ? `Light ${hm(tot[1])} · Deep ${hm(tot[2])} · REM ${hm(tot[3])}<br><b>Total ${hm(asleep)}</b>` : 'No data';
+
+  drawEcg();
+  $('battery').textContent = S.battery != null ? 'Watch battery: ' + S.battery + '%' : '';
+  $('rtw').checked = !!S.rtw;
+
+  // sport
+  const chips = [[null, 'All'], [2, 'Running'], [1, 'Walking'], [3, 'Cycling']];
+  $('sportChips').innerHTML = '';
+  chips.forEach(([k, label]) => {
+    const b = document.createElement('button'); b.className = 'chip' + (sportFilter === k ? ' on' : ''); b.textContent = label;
+    b.onclick = () => { sportFilter = k; render(); }; $('sportChips').append(b);
+  });
+  const list = S.sports.filter(x => sportFilter === null || x.sport === sportFilter).sort((x, y) => y.ts - x.ts);
+  $('sportTotal').textContent = (list.reduce((s, x) => s + x.dist, 0) / 1000).toFixed(1) + ' km';
+  $('sportSub').textContent = list.reduce((s, x) => s + x.kcal, 0) + ' kcal · ' + list.length + ' activities';
+  $('sportList').innerHTML = list.length ? list.map(x => `<div class="card"><b>${SPORTS[x.sport] || 'Other'}</b><br>${new Date(x.ts).toLocaleString()}<br><small>${(x.dist / 1000).toFixed(2)} km · ${x.min} min · ${x.kcal} kcal</small></div>`).join('')
+                                                    : '<small>No activities yet. Sync from the Health tab.</small>';
+  renderContacts();
+}
+
+function drawEcg(){
+  const c = $('ecg'), x = c.getContext('2d'), s = S.ecg;
+  x.clearRect(0, 0, c.width, c.height);
+  $('ecgnote').style.display = s.length < 2 ? 'block' : 'none';
+  if (s.length < 2) return;
+  const mn = Math.min(...s), mx = Math.max(...s), span = (mx - mn) || 1;
+  x.strokeStyle = '#4cc2ff'; x.lineWidth = 2; x.beginPath();
+  s.forEach((v, i) => { const px = i * c.width / (s.length - 1), py = c.height - (v - mn) / span * (c.height - 10) - 5; i ? x.lineTo(px, py) : x.moveTo(px, py); });
+  x.stroke();
+}
+
+// --------------------------------------------------------- contacts
+function renderContacts(){
+  $('contacts').innerHTML = '';
+  for (let i = 0; i < 8; i++){
+    const c = S.contacts[i], row = document.createElement('div'); row.className = 'slot';
+    row.innerHTML = `<span>${c ? c.name + '<br><small>' + c.number + '</small>' : '<small>Empty slot ' + (i + 1) + '</small>'}</span>`;
+    const box = document.createElement('span');
+    const add = document.createElement('button'); add.className = 'ghost'; add.textContent = c ? 'Change' : 'Add'; add.onclick = () => pickContact(i);
+    box.append(add);
+    if (c){ const del = document.createElement('button'); del.className = 'ghost'; del.textContent = 'Clear'; del.style.marginLeft = '6px';
+            del.onclick = () => { S.contacts[i] = null; S.contacts = S.contacts.slice(0, 8); save(); render(); }; box.append(del); }
+    row.append(box); $('contacts').append(row);
+  }
+}
+
+async function pickContact(slot){
+  let name, number;
+  try {
+    if (navigator.contacts && navigator.contacts.select){
+      const r = await navigator.contacts.select(['name', 'tel'], {multiple:false});
+      if (!r.length) return; name = (r[0].name || [])[0]; number = (r[0].tel || [])[0];
+    }
+  } catch (e){ log('Contact picker: ' + e.message); }
+  if (!name || !number){ name = prompt('Contact name'); if (!name) return; number = prompt('Phone number'); if (!number) return; }
+  S.contacts[slot] = {name, number}; save(); render();
+}
+
+// ---------------------------------------------------------- camera
+let camStream = null;
+async function camStart(){
+  if (camStream) return;
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+    $('cam').srcObject = camStream; $('camwrap').hidden = false; $('btnCam').textContent = 'Stop camera';
+  } catch (e){ log('Camera: ' + e.message); }
+}
+function camStop(){
+  camStream && camStream.getTracks().forEach(t => t.stop()); camStream = null;
+  $('cam').srcObject = null; $('camwrap').hidden = true; $('btnCam').textContent = 'Start camera';
+}
+function shutter(){
+  const v = $('cam');
+  if (!camStream || !v.videoWidth){ log('Camera is not running'); return; }
+  const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
+  c.getContext('2d').drawImage(v, 0, 0);
+  c.toBlob(b => {
+    const url = URL.createObjectURL(b), a = document.createElement('a');
+    a.href = url; a.download = 'watch-photo-' + Date.now() + '.jpg';
+    a.innerHTML = `<img src="${url}">`; $('thumbs').prepend(a);
+  }, 'image/jpeg', 0.95);
+}
+function onCamera(action){
+  log('Watch camera: ' + action);
+  if (action === 'open') camStart(); else if (action === 'shutter') shutter(); else if (action === 'close') camStop();
+}
+
+// ----------------------------------------------------------- wakelock
+let lock = null;
+async function setWake(on){
+  try { if (on && 'wakeLock' in navigator) lock = await navigator.wakeLock.request('screen'); else if (lock){ await lock.release(); lock = null; } }
+  catch (e){ log('Wake lock: ' + e.message); }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && $('wake').checked) setWake(true); });
+
+// ------------------------------------------------------- button wiring
+$('btnScan').onclick = () => scan(false);
+$('btnScanAll').onclick = () => scan(true);
+$('btnDisc').onclick = disconnect;
+$('btnReconnect').onclick = async () => {
+  if (!dev && navigator.bluetooth && navigator.bluetooth.getDevices){
+    try { const d = await navigator.bluetooth.getDevices(); if (d.length){ dev = d[0]; dev.addEventListener('gattserverdisconnected', onDisc); } } catch {}
+  }
+  if (!dev){ log('No known watch yet. Use Scan.'); return; }
+  userDisc = false; backoff = 1000; connect();
+};
+$('btnFind').onclick = () => send(findWatch());
+$('btnSync').onclick = () => send(requestSync());
+$('rtw').onchange = e => { S.rtw = e.target.checked; save(); send(raiseToWake(S.rtw)); };
+$('wake').onchange = e => setWake(e.target.checked);
+$('btnCam').onclick = () => camStream ? camStop() : camStart();
+$('btnShot').onclick = shutter;
+$('btnContacts').onclick = () => {
+  const list = S.contacts.filter(Boolean).slice(0, 8);
+  sendAll(chunked(C.KIND_CONTACTS, contactsBlob(list)));
+};
+
+let wpData = null;
+$('wpFile').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const img = new Image();
+  img.onload = () => {
+    const c = $('wpPrev'), x = c.getContext('2d');
+    const s = Math.max(G.W / img.width, G.H / img.height);       // cover-fit crop
+    x.drawImage(img, (G.W - img.width * s) / 2, (G.H - img.height * s) / 2, img.width * s, img.height * s);
+    wpData = rgb565(x.getImageData(0, 0, G.W, G.H).data, G.W, G.H);
+    $('btnWp').disabled = false; URL.revokeObjectURL(img.src);
+  };
+  img.src = URL.createObjectURL(f);
+};
+$('btnWp').onclick = () => wpData && sendAll(chunked(C.KIND_WALLPAPER, wpData));
+
+$('btnReset').onclick = () => { if (confirm('Factory reset the watch? This erases data on the watch.')) send(factoryReset()); };
+$('btnRemove').onclick = () => {
+  if (!confirm('Remove this watch from the app?')) return;
+  const wipe = confirm('Also erase the health data stored in this app?\nOK = erase, Cancel = keep');
+  disconnect(); try { dev && dev.forget && dev.forget(); } catch {} dev = null;
+  if (wipe){ S = DEFAULTS(); save(); }
+  render(); setStatus('Disconnected'); log('Device removed');
+};
+$('btnClear').onclick = () => { if (confirm('Erase all stored data in this app?')) { S = DEFAULTS(); save(); fillProfile(); render(); } };
+
+// -------------------------------------------------------- diagnostics
+// Feeds hand-built frames through the same parser the watch data uses.
+$('btnTest').onclick = () => {
+  const dv = (n, f) => { const b = new DataView(new ArrayBuffer(n)); f(b); return new Uint8Array(b.buffer); };
+  const frames = [
+    frame(C.HR, [0, 0, 0, 0, 72]),
+    frame(C.BP, [0, 0, 0, 0, 118, 78]),
+    frame(C.SPO2, [0, 0, 0, 0, 98]),
+    frame(C.ACT, dv(14, b => { b.setUint32(4, 5230, true); b.setUint32(8, 3900, true); b.setUint16(12, 210, true); })),
+    frame(C.SLEEP, dv(7, b => { b.setUint8(4, 2); b.setUint16(5, 95, true); })),
+    frame(C.SPORT, dv(13, b => { b.setUint32(0, Math.floor(Date.now() / 1000) - 3600); b.setUint8(4, 2); b.setUint16(5, 32, true); b.setUint32(7, 5100, true); b.setUint16(11, 330, true); })),
+    frame(C.BATT, [76])
+  ];
+  for (let k = 0; k < 8; k++)
+    frames.push(frame(C.ECG, dv(13, b => { b.setUint8(0, k); for (let i = 0; i < 6; i++) b.setInt16(1 + i * 2, Math.round(Math.sin((k * 6 + i) / 2) * 600 + (i === 3 ? 900 : 0)), false); })));
+  frames.forEach(f => onNotify(f));
+  log('Injected ' + frames.length + ' test packets');
+};
+
+// ------------------------------------------------------------ profile
+function fillProfile(){
+  const p = S.profile;
+  $('pName').value = p.name; $('pGender').value = p.gender; $('pAge').value = p.age;
+  $('pHeight').value = p.height; $('pWeight').value = p.weight; $('pGoal').value = p.goal; updBmi();
+}
+function updBmi(){
+  const b = bmiOf(parseFloat($('pWeight').value) || 0, parseInt($('pHeight').value) || 0);
+  const l = b <= 0 ? '' : b < 18.5 ? 'Underweight' : b < 25 ? 'Normal' : b < 30 ? 'Overweight' : 'Obese';
+  $('bmi').textContent = b ? `BMI ${b.toFixed(1)} · ${l}` : 'BMI --';
+}
+['pHeight', 'pWeight'].forEach(id => $(id).addEventListener('input', updBmi));
+$('btnProfile').onclick = () => {
+  S.profile = {name:$('pName').value, gender:+$('pGender').value, age:+$('pAge').value || 30,
+               height:+$('pHeight').value || 170, weight:parseFloat($('pWeight').value) || 70, goal:+$('pGoal').value || 8000};
+  save(); send(userProfile(S.profile)); render(); log('Profile saved');
+};
+
+fillProfile(); render();
+if (!navigator.bluetooth) log('Web Bluetooth unavailable in this browser. Use Chrome on Android.');
+</script>
+</body>
+</html>
